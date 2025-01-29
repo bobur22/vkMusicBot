@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-
+import httpx
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.enums.parse_mode import ParseMode
@@ -22,7 +22,12 @@ user = Router()
 
 @user.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    await message.answer("Привет! Я могу найти музыку по её названию или автору 😊 из VK")
+    await message.answer("""
+Shunchaki menga qo'shiqchi yoki qo'shiq nomini jo'nating va men siz uchun musiqa topib beraman!
+/song - qo'shiq nomi orqali qidirish
+/artist - Qo'shiqchi ismi orqali qidirish
+/setlang - tilni sozlash
+/settings - sozlamalarni o'zgartirish""")
 
 @user.message(F.text)
 async def search_music(message: Message, state: FSMContext) -> None:
@@ -33,11 +38,12 @@ async def search_music(message: Message, state: FSMContext) -> None:
         tracks_dict = [track.to_dict() for track in tracks]
         await state.update_data(tracks=tracks_dict)
 
-        results = [f"По запросу <b>{message.text}</b> удалось найти:\n\n"]
+        results = [f"🔍<b>{message.text}</b>\nNatijalar:\n"]
 
         for idx, track in enumerate(tracks, start=1):
             title = track.title
             artist = track.artist
+            id = track.track_id
             results.append(f"{idx}. {artist} - {title}")
 
         results_text = "\n".join(results)
@@ -52,23 +58,29 @@ async def search_music(message: Message, state: FSMContext) -> None:
 async def delete_answer(callback: CallbackQuery) -> None:
     await callback.message.delete()
 
+from aiogram.types import URLInputFile
+
 @user.callback_query(F.data.startswith("id_"))
 async def send_track(callback: CallbackQuery, state: FSMContext) -> None:
     track_index = int(callback.data.split('_')[1]) - 1
-
+    await callback.answer()
     data = await state.get_data()
     tracks = data.get("tracks", [])
 
     if tracks and 0 <= track_index < len(tracks):
         track = tracks[track_index]
 
-        await callback.bot.send_audio(
-            chat_id=callback.from_user.id,
-            audio=track['url'],
-            title=track['title'],
-            performer=track['artist'],
-            duration=track['duration']
+        # URL orqali audio yuborish
+        audio_file = URLInputFile(track['url'])  # URLni URLInputFile obyekti sifatida ko'rsatamiz
+
+        audio = await callback.message.answer_audio(
+            audio=track['url'],  # URLInputFile obyekti
+            title=track['title'],  # Qo'shiq nomi
+            performer=track['artist'],  # Qo'shiqchi
+            duration=track['duration']  # Davomiylik (sekundlarda)
         )
-        await callback.answer()
+
+        await callback.message.reply_audio(audio.audio.file_id)
+        
     else:
-        await callback.answer("Трек не найден", show_alert=True)
+        await callback.answer("Audio topilmadi.")
